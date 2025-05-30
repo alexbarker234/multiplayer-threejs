@@ -28,6 +28,7 @@ class Game {
   private update(deltaTime: number, currentTime: number) {
     this.playerController.update(deltaTime);
     this.sceneManager.updateCubes(deltaTime);
+    this.networkManager.update(deltaTime);
 
     // Send network updates
     this.networkManager.sendPlayerUpdate(

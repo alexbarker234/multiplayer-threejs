@@ -3,16 +3,24 @@ import * as THREE from "three";
 import type { GameState } from "../../server/schema/GameState";
 import type { PlayerUpdateMessage } from "../types/GameTypes";
 
+interface OtherPlayer {
+  mesh: THREE.Mesh;
+  lastPosition: THREE.Vector3;
+  desiredPosition: THREE.Vector3;
+  lastRotation: { x: number; y: number };
+  desiredRotation: { x: number; y: number };
+}
+
 export class NetworkManager {
   private client = new Client("ws://localhost:3000");
   private room?: Room<GameState>;
-  private otherPlayers = new Map<string, THREE.Mesh>();
+  private otherPlayers = new Map<string, OtherPlayer>();
   private lastNetworkUpdate = 0;
   private networkUpdateRate = 1000 / 20; // 20 updates per second
 
   // Player representation geometry
   private playerGeometry = new THREE.CapsuleGeometry(1, 2, 4, 8);
-  private playerMaterial = new THREE.MeshLambertMaterial({ color: 0xff6b6b });
+  private playerMaterial = new THREE.MeshToonMaterial({ color: 0xff6b6b });
 
   constructor(private scene: THREE.Scene) {}
 
@@ -49,19 +57,29 @@ export class NetworkManager {
       playerMesh.castShadow = true;
       playerMesh.receiveShadow = true;
       this.scene.add(playerMesh);
-      this.otherPlayers.set(sessionId, playerMesh);
 
-      console.log("Added player mesh for:", sessionId, "at position:", player.x, player.y, player.z);
+      const otherPlayer: OtherPlayer = {
+        mesh: playerMesh,
+        lastPosition: new THREE.Vector3(player.x, player.y, player.z),
+        desiredPosition: new THREE.Vector3(player.x, player.y, player.z),
+        lastRotation: { x: player.rotationX, y: player.rotationY },
+        desiredRotation: { x: player.rotationX, y: player.rotationY }
+      };
 
-      // Listen for player position updates
+      this.otherPlayers.set(sessionId, otherPlayer);
+
       $(player).onChange(() => {
-        if (sessionId === this.room!.sessionId) return; // Skip our own player
+        if (sessionId === this.room!.sessionId) return;
 
-        const playerMesh = this.otherPlayers.get(sessionId);
-        if (playerMesh) {
-          // Smoothly interpolate to new position
-          playerMesh.position.set(player.x, player.y, player.z);
-          playerMesh.rotation.set(player.rotationX, player.rotationY, 0);
+        const otherPlayer = this.otherPlayers.get(sessionId);
+        if (otherPlayer) {
+          // Update last position to current position before setting new desired position
+          otherPlayer.lastPosition.copy(otherPlayer.mesh.position);
+          otherPlayer.lastRotation = { ...otherPlayer.desiredRotation };
+
+          // Set new desired position and rotation
+          otherPlayer.desiredPosition.set(player.x, player.y, player.z);
+          otherPlayer.desiredRotation = { x: player.rotationX, y: player.rotationY };
         }
       });
     });
@@ -69,11 +87,36 @@ export class NetworkManager {
     $(this.room.state).players.onRemove((_, sessionId) => {
       console.log("Player left:", sessionId);
 
-      const playerMesh = this.otherPlayers.get(sessionId);
-      if (playerMesh) {
-        this.scene.remove(playerMesh);
+      const otherPlayer = this.otherPlayers.get(sessionId);
+      if (otherPlayer) {
+        this.scene.remove(otherPlayer.mesh);
         this.otherPlayers.delete(sessionId);
       }
+    });
+  }
+
+  public update(deltaTime: number) {
+    // Interpolate positions and rotations for all other players
+    const interpolationSpeed = 20;
+
+    this.otherPlayers.forEach((otherPlayer) => {
+      // Interpolate position
+      otherPlayer.mesh.position.lerp(otherPlayer.desiredPosition, interpolationSpeed * deltaTime);
+
+      // Interpolate rotation using slerp
+      const rotationSlerpFactor = interpolationSpeed * deltaTime;
+
+      const currentQuaternion = new THREE.Quaternion();
+      currentQuaternion.setFromEuler(otherPlayer.mesh.rotation);
+
+      const desiredQuaternion = new THREE.Quaternion();
+      desiredQuaternion.setFromEuler(
+        new THREE.Euler(otherPlayer.desiredRotation.x, otherPlayer.desiredRotation.y, 0, "YXZ")
+      );
+
+      currentQuaternion.slerp(desiredQuaternion, rotationSlerpFactor);
+
+      otherPlayer.mesh.setRotationFromQuaternion(currentQuaternion);
     });
   }
 

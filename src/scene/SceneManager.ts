@@ -39,7 +39,7 @@ export class SceneManager {
   private createEnvironment() {
     // Create scattered grey cubes
     const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
-    const cubeMaterial = new THREE.MeshLambertMaterial({ color: 0x808080 });
+    const cubeMaterial = new THREE.MeshToonMaterial({ color: 0x808080 });
 
     const numCubes = 50;
     for (let i = 0; i < numCubes; i++) {
@@ -64,7 +64,7 @@ export class SceneManager {
 
     // Ground plane for reference
     const groundGeometry = new THREE.PlaneGeometry(500, 500);
-    const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x228b22 });
+    const groundMaterial = new THREE.MeshToonMaterial({ color: 0x228b22 });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = -10;
